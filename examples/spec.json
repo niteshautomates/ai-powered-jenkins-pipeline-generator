@@ -1,0 +1,10 @@
+{
+  "apps": [
+    {"name": "orders-api", "path": "services/orders", "tech": "java", "variant": "maven"},
+    {"name": "web", "path": "web", "tech": "typescript"},
+    {"name": "worker", "path": "services/worker", "tech": "python"}
+  ],
+  "registry": "acr",
+  "cluster": "aks",
+  "deploy_method": "helm"
+}
