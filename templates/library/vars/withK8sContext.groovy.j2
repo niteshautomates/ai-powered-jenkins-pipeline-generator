@@ -1,0 +1,68 @@
+// Authenticates to the << cluster_cfg.display >> cluster for one environment and runs the closure with KUBECONFIG set, inside the kubectl/helm tools container.
+void call(String environment, Closure body) {
+    Map platform = platformConfig()
+    String credentialId = "${platform.credentials.cluster}-${environment}"
+    String upper = environment.toUpperCase()
+    String kubeconfig = "${pwd(tmp: true)}/kubeconfig-${environment}".toString()
+    String containerArgs = "-e HOME=${env.WORKSPACE}/.ci-home"
+<% if cluster == "generic" %>
+    withCredentials([file(credentialsId: credentialId, variable: 'KUBECONFIG')]) {
+        docker.image(platform.images.k8s).inside(containerArgs) {
+            body()
+        }
+    }
+<% elif cluster == "aks" %>
+    String clusterName = env."AKS_CLUSTER_NAME_${upper}" ?: requireEnv('AKS_CLUSTER_NAME')
+    try {
+        withCredentials([usernamePassword(credentialsId: credentialId,
+                                          usernameVariable: 'AZURE_CLIENT_ID',
+                                          passwordVariable: 'AZURE_CLIENT_SECRET')]) {
+            withEnv([
+                "AZURE_CONFIG_DIR=${pwd(tmp: true)}/azure",
+                "AZURE_TENANT=${requireEnv('AZURE_TENANT_ID')}",
+                "AZURE_SUBSCRIPTION=${requireEnv('AZURE_SUBSCRIPTION_ID')}",
+                "AKS_RESOURCE_GROUP=${requireEnv('AKS_RESOURCE_GROUP')}",
+                "AKS_CLUSTER=${clusterName}",
+                "KUBECONFIG_OUT=${kubeconfig}",
+            ]) {
+                docker.image(platform.images.azure_cli).inside(containerArgs) {
+                    sh '''
+                        az login --service-principal --username "$AZURE_CLIENT_ID" --password "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT" --output none
+                        az account set --subscription "$AZURE_SUBSCRIPTION"
+                        az aks get-credentials --resource-group "$AKS_RESOURCE_GROUP" --name "$AKS_CLUSTER" --file "$KUBECONFIG_OUT" --overwrite-existing
+                    '''
+                }
+            }
+        }
+        withEnv(["KUBECONFIG=${kubeconfig}"]) {
+            docker.image(platform.images.k8s).inside(containerArgs) {
+                body()
+            }
+        }
+    } finally {
+        sh "rm -rf '${kubeconfig}'"
+    }
+<% else %>
+    String clusterName = env."EKS_CLUSTER_NAME_${upper}" ?: requireEnv('EKS_CLUSTER_NAME')
+    try {
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+                          credentialsId: credentialId,
+                          accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                          secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
+            withEnv([
+                "AWS_REGION=${requireEnv('AWS_REGION')}",
+                "AWS_DEFAULT_REGION=${requireEnv('AWS_REGION')}",
+                "EKS_CLUSTER=${clusterName}",
+                "KUBECONFIG=${kubeconfig}",
+            ]) {
+                docker.image(platform.images.k8s).inside(containerArgs) {
+                    sh 'aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION" --kubeconfig "$KUBECONFIG"'
+                    body()
+                }
+            }
+        }
+    } finally {
+        sh "rm -rf '${kubeconfig}'"
+    }
+<% endif %>
+}

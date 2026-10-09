@@ -1,0 +1,20 @@
+// Reports the build result (<< notifications >>). Quiet on success unless notifyOnSuccess: true.
+void call(Map args = [:]) {
+    String status = currentBuild.currentResult
+    if (status == 'SUCCESS' && !args.notifyOnSuccess) {
+        return
+    }
+    String summary = "${env.JOB_NAME} #${env.BUILD_NUMBER}: ${status} (${env.BUILD_URL})"
+<% if notifications == "slack" %>
+    String color = status == 'SUCCESS' ? 'good' : (status == 'UNSTABLE' ? 'warning' : 'danger')
+    slackSend(color: color, message: summary)
+<% elif notifications == "email" %>
+    emailext(
+        subject: "${status}: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+        body: summary,
+        recipientProviders: [culprits(), requestor()]
+    )
+<% else %>
+    echo summary
+<% endif %>
+}

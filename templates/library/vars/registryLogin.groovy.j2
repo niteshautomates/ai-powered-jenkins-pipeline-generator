@@ -1,0 +1,36 @@
+// Logs in to << reg.display >> with an isolated Docker config for the duration of the closure, then removes it.
+void call(Closure body) {
+    Map platform = platformConfig()
+    withEnv([
+        "REGISTRY_HOST=${requireEnv('REGISTRY_HOST')}",
+        "DOCKER_CONFIG=${pwd(tmp: true)}/docker-config",
+<% if registry == "ecr" %>
+        "AWS_REGION=${requireEnv('AWS_REGION')}",
+        "AWS_CLI_IMAGE=${platform.images.aws_cli}",
+<% endif %>
+    ]) {
+        try {
+<% if registry == "ecr" %>
+            withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+                              credentialsId: platform.credentials.registry,
+                              accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                              secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
+                sh '''
+                    docker run --rm -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_REGION "$AWS_CLI_IMAGE" \
+                      ecr get-login-password --region "$AWS_REGION" \
+                      | docker login --username AWS --password-stdin "$REGISTRY_HOST"
+                '''
+            }
+<% else %>
+            withCredentials([usernamePassword(credentialsId: platform.credentials.registry,
+                                              usernameVariable: 'REGISTRY_USERNAME',
+                                              passwordVariable: 'REGISTRY_PASSWORD')]) {
+                sh 'echo "$REGISTRY_PASSWORD" | docker login --username "$REGISTRY_USERNAME" --password-stdin "$REGISTRY_HOST"'
+            }
+<% endif %>
+            body()
+        } finally {
+            sh 'rm -rf "$DOCKER_CONFIG"'
+        }
+    }
+}

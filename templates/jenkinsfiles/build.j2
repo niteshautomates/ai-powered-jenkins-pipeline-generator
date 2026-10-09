@@ -1,0 +1,10 @@
+// Generated for << app.name >> (<< t.display >>): image build, scan and push. All logic lives in the shared library.
+@Library('<< library_name >>@<< library_ref >>') _
+
+appBuildPipeline(
+    name: '<< app.name >>',
+    path: '<< path >>',
+    context: '<< path >>',
+    dockerfile: '<< dockerfile >>',
+    releaseJob: '<< app.name >>-release'
+)

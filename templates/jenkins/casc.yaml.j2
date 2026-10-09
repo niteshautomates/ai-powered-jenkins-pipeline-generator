@@ -1,0 +1,25 @@
+# Jenkins Configuration as Code: registers the shared library and the platform variables the library reads.
+# Values come from the controller's environment, so nothing sensitive is stored here.
+jenkins:
+  globalNodeProperties:
+    - envVars:
+        env:
+<% for name in var_names %>
+          - key: "<< name >>"
+            value: "${<< name >>:-}"
+<% endfor %>
+unclassified:
+  globalLibraries:
+    libraries:
+      - name: "<< library_name >>"
+        defaultVersion: "<< library_ref >>"
+        implicit: false
+        allowVersionOverride: true
+        retriever:
+          modernSCM:
+            scm:
+              git:
+                remote: "${PIPELINE_LIB_REPO_URL}"
+                credentialsId: "${SCM_CREDENTIALS_ID:-}"
+jobs:
+  - file: "${CASC_JENKINS_CONFIG_DIR:-/var/jenkins_home/casc}/seed.groovy"

@@ -1,0 +1,29 @@
+// Atomic helm upgrade --install of deploy/helm/<app> for one environment, then verifies the rollout. Run inside withK8sContext.
+void call(Map args) {
+    org.platform.pipeline.PipelineConfig.require(this, args, ['app', 'environment', 'namespace', 'image'])
+    withEnv([
+        "APP=${args.app}",
+        "ENVIRONMENT=${args.environment}",
+        "NAMESPACE=${args.namespace}",
+        "REPOSITORY=${args.image.repository}",
+        "TAG=${args.image.tag}",
+        "DIGEST=${args.image.digest}",
+        "PULL_SECRET=${args.pullSecret ?: ''}",
+    ]) {
+        sh '''#!/usr/bin/env bash
+            set -euo pipefail
+            ARGS=()
+            if [ -n "$PULL_SECRET" ]; then ARGS+=(--set "imagePullSecrets[0].name=${PULL_SECRET}"); fi
+            helm upgrade --install "$APP" "deploy/helm/$APP" \
+              --namespace "$NAMESPACE" --create-namespace \
+              --values "deploy/helm/$APP/values.yaml" \
+              --values "deploy/helm/$APP/values-${ENVIRONMENT}.yaml" \
+              --set image.repository="$REPOSITORY" \
+              --set image.tag="$TAG" \
+              --set image.digest="$DIGEST" \
+              "${ARGS[@]}" \
+              --atomic --wait --timeout 10m --history-max 10
+            kubectl rollout status "deployment/${APP}" --namespace "$NAMESPACE" --timeout=300s
+        '''
+    }
+}

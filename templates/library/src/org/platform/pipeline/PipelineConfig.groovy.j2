@@ -1,0 +1,36 @@
+// Validates the Map every pipeline entry point receives, so a typo in a Jenkinsfile fails in seconds with a clear message.
+package org.platform.pipeline
+
+class PipelineConfig implements Serializable {
+
+    @NonCPS
+    static List<String> missingKeys(Map cfg, List<String> keys) {
+        List<String> missing = []
+        for (String key : keys) {
+            if (!cfg.containsKey(key) || cfg[key] == null || cfg[key].toString().trim().isEmpty()) {
+                missing.add(key)
+            }
+        }
+        return missing
+    }
+
+    // `steps` is the calling pipeline script (pass `this`) so failures surface as Jenkins errors.
+    static void require(def steps, Map cfg, List<String> keys) {
+        List<String> missing = missingKeys(cfg, keys)
+        if (!missing.isEmpty()) {
+            steps.error("Missing pipeline configuration: ${missing.join(', ')}")
+        }
+    }
+
+    // Application names become image repositories and Kubernetes names, so they must be DNS-1123 labels.
+    @NonCPS
+    static boolean isValidName(String name) {
+        return name != null && name.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+    }
+
+    static void requireValidName(def steps, String name) {
+        if (!isValidName(name)) {
+            steps.error("Invalid application name '${name}': use lowercase letters, digits and '-'")
+        }
+    }
+}

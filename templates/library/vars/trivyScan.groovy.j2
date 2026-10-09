@@ -1,0 +1,27 @@
+// Runs Trivy (pinned image) against a container image or the workspace filesystem; fails on HIGH/CRITICAL by default.
+void call(Map args) {
+    org.platform.pipeline.PipelineConfig.require(this, args, ['target'])
+    String mode = args.mode ?: 'image'
+    if (!(mode in ['image', 'fs'])) {
+        error("trivyScan mode must be 'image' or 'fs', got '${mode}'")
+    }
+    int exitCode = args.containsKey('exitCode') ? args.exitCode : 1
+    withEnv([
+        "TRIVY_IMAGE=${platformConfig().images.trivy}",
+        "SCAN_MODE=${mode}",
+        "SCAN_TARGET=${args.target}",
+        "SEVERITY=${args.severity ?: 'HIGH,CRITICAL'}",
+        "EXIT_CODE=${exitCode}",
+    ]) {
+        sh '''
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$WORKSPACE:/work" -w /work \
+              -v trivy-cache:/root/.cache \
+              "$TRIVY_IMAGE" "$SCAN_MODE" \
+              --severity "$SEVERITY" --exit-code "$EXIT_CODE" \
+              --ignore-unfixed --no-progress --skip-dirs .ci-home \
+              "$SCAN_TARGET"
+        '''
+    }
+}

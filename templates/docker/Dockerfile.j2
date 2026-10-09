@@ -1,0 +1,92 @@
+# syntax=docker/dockerfile:1
+# Generated for << app.name >> (<< t.display >>). Build context: << app.path >>
+<% if app.tech == "java" and variant == "maven" %>
+FROM maven:3.9-eclipse-temurin-<< version >> AS build
+WORKDIR /src
+COPY pom.xml .
+RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp dependency:go-offline
+COPY src ./src
+RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp package -DskipTests \
+ && cp target/*.jar /tmp/app.jar
+
+FROM eclipse-temurin:<< version >>-jre
+<% elif app.tech == "java" %>
+FROM gradle:8-jdk<< version >> AS build
+WORKDIR /src
+COPY . .
+RUN --mount=type=cache,target=/home/gradle/.gradle gradle bootJar -x test --no-daemon \
+ && cp build/libs/*.jar /tmp/app.jar
+
+FROM eclipse-temurin:<< version >>-jre
+<% elif app.tech in ("node", "typescript") %>
+FROM node:<< version >>-alpine AS deps
+WORKDIR /app
+COPY package*.json <% if variant == "yarn" %>yarn.lock <% endif %>./
+RUN <% if variant == "yarn" %>yarn install --frozen-lockfile<% else %>npm ci<% endif %>
+
+
+FROM deps AS build
+COPY . .
+RUN <% if variant == "yarn" %>yarn build<% else %>npm run build --if-present<% endif %>
+
+FROM deps AS prod-deps
+RUN <% if variant == "yarn" %>yarn install --frozen-lockfile --production<% else %>npm prune --omit=dev<% endif %>
+
+FROM node:<< version >>-alpine
+ENV NODE_ENV=production
+<% elif app.tech == "python" %>
+FROM python:<< version >>-slim AS build
+WORKDIR /src
+ENV PIP_NO_CACHE_DIR=1 PYTHONDONTWRITEBYTECODE=1
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+<% if variant == "poetry" %>
+COPY pyproject.toml poetry.lock ./
+RUN pip install poetry && poetry export --without-hashes -o requirements.txt && pip install -r requirements.txt
+<% else %>
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+<% endif %>
+
+FROM python:<< version >>-slim
+ENV PYTHONUNBUFFERED=1 PATH="/opt/venv/bin:$PATH"
+<% elif app.tech == "dotnet" %>
+FROM mcr.microsoft.com/dotnet/sdk:<< version_major_minor >> AS build
+WORKDIR /src
+COPY . .
+RUN dotnet restore && dotnet publish -c Release -o /out --no-restore
+
+FROM mcr.microsoft.com/dotnet/aspnet:<< version_major_minor >>
+ENV ASPNETCORE_URLS=http://+:<< port >>
+<% elif app.tech == "go" %>
+FROM golang:<< version >>-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/app .
+
+FROM gcr.io/distroless/static-debian12:nonroot
+<% endif %>
+WORKDIR /app
+<% if app.tech == "java" %>
+COPY --from=build /tmp/app.jar /app/app.jar
+<% elif app.tech in ("node", "typescript") %>
+COPY --from=build /app ./
+COPY --from=prod-deps /app/node_modules ./node_modules
+<% elif app.tech == "python" %>
+COPY --from=build /opt/venv /opt/venv
+COPY . .
+<% elif app.tech == "dotnet" %>
+COPY --from=build /out ./
+<% elif app.tech == "go" %>
+COPY --from=build /out/app /app/app
+<% endif %>
+<% if app.tech != "go" %>
+RUN <% if app.tech in ("node", "typescript") %>addgroup -g 10001 app && adduser -D -u 10001 -G app app<% else %>groupadd -g 10001 app && useradd -r -u 10001 -g app app<% endif %> \
+ && chown -R 10001:10001 /app
+<% endif %>
+USER 10001:10001
+EXPOSE << port >>
+# Liveness/readiness are handled by Kubernetes probes (<< t.health_path >>), not HEALTHCHECK.
+CMD << start_cmd_json >>

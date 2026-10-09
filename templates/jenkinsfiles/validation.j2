@@ -1,0 +1,10 @@
+// Generated for << app.name >> (<< t.display >>): validation. All logic lives in the shared library.
+@Library('<< library_name >>@<< library_ref >>') _
+
+appValidationPipeline(
+    name: '<< app.name >>',
+    path: '<< path >>',
+    version: '<< version >>',
+    dockerfile: '<< dockerfile >>',
+    ci: { Map args -> << ci_step >>(args) }
+)

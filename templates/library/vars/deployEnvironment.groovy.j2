@@ -1,0 +1,18 @@
+// Deploys one app to one environment with << method >>: cluster auth, namespace preparation, deployment and rollout check.
+void call(Map args) {
+    org.platform.pipeline.PipelineConfig.require(this, args, ['app', 'environment', 'imageReference'])
+    String environment = args.environment
+    String namespace = args.namespace ?: (env."K8S_NAMESPACE_${environment.toUpperCase()}" ?: "${args.app}-${environment}".toString())
+    Map image = resolveImage(appName: args.app, reference: args.imageReference)
+    echo "Deploying ${image.full} to ${namespace} (${environment})"
+    withK8sContext(environment) {
+        prepareNamespace(namespace: namespace<% if reg.needs_pull_secret %>, pullSecret: 'regcred'<% endif %>)
+        deploy<< method | capitalize >>(
+            app: args.app,
+            environment: environment,
+            namespace: namespace,
+            image: image<% if reg.needs_pull_secret %>,
+            pullSecret: 'regcred'<% endif %>
+        )
+    }
+}

@@ -1,0 +1,20 @@
+// Ensures the target namespace exists<% if reg.needs_pull_secret %> and (re)creates the image pull secret<% endif %>. Run inside withK8sContext.
+void call(Map args) {
+    org.platform.pipeline.PipelineConfig.require(this, args, ['namespace'])
+    withEnv(["NAMESPACE=${args.namespace}"<% if reg.needs_pull_secret %>, "REGISTRY_HOST=${requireEnv('REGISTRY_HOST')}", "PULL_SECRET=${args.pullSecret ?: 'regcred'}"<% endif %>]) {
+        sh 'kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -'
+<% if reg.needs_pull_secret %>
+        withCredentials([usernamePassword(credentialsId: platformConfig().credentials.registry,
+                                          usernameVariable: 'REGISTRY_USERNAME',
+                                          passwordVariable: 'REGISTRY_PASSWORD')]) {
+            sh '''
+                kubectl create secret docker-registry "$PULL_SECRET" \
+                  --docker-server="$REGISTRY_HOST" \
+                  --docker-username="$REGISTRY_USERNAME" \
+                  --docker-password="$REGISTRY_PASSWORD" \
+                  --namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+            '''
+        }
+<% endif %>
+    }
+}

@@ -1,0 +1,307 @@
+# config/technology_config.yaml
+#
+# Single source of truth consumed by the Jinja2 templates in templates/.
+# Strings that start with `${` inside ci_image are Groovy GStrings evaluated in the shared library.
+# Container images and tool versions are pinned here so every generated pipeline uses the same set.
+
+technologies:
+  java:
+    codeql_build_mode: none
+    default_start: "java -jar /app/app.jar"
+    display: Java
+    codeql_language: java-kotlin
+    default_port: 8080
+    health_path: /actuator/health
+    default_version: "21"
+    default_variant: maven
+    setup_action: setup_java
+    variants:
+      maven:
+        ci_image: "maven:3.9-eclipse-temurin-${version}"
+        cache: maven
+        install: ""
+        lint: "mvn -B -ntp checkstyle:check"
+        test: "mvn -B -ntp verify"
+        test_reports: "**/target/surefire-reports/*.xml"
+        build: "mvn -B -ntp package -DskipTests"
+        coverage_path: "target/site/jacoco"
+        dep_files: ["pom.xml"]
+      gradle:
+        ci_image: "gradle:8-jdk${version}"
+        cache: gradle
+        install: ""
+        lint: "./gradlew check -x test"
+        test: "./gradlew test jacocoTestReport"
+        test_reports: "**/build/test-results/test/*.xml"
+        build: "./gradlew build -x test"
+        coverage_path: "build/reports/jacoco"
+        dep_files: ["build.gradle", "build.gradle.kts", "settings.gradle"]
+
+  node:
+    codeql_build_mode: none
+    default_start: "npm start"
+    display: Node.js
+    codeql_language: javascript-typescript
+    default_port: 3000
+    health_path: /health
+    default_version: "20"
+    default_variant: npm
+    setup_action: setup_node
+    variants:
+      npm:
+        ci_image: "node:${version}"
+        cache: npm
+        install: "npm ci"
+        lint: "npm run lint --if-present"
+        test: "npm test --if-present -- --coverage"
+        build: "npm run build --if-present"
+        coverage_path: "coverage"
+        dep_files: ["package.json", "package-lock.json"]
+      yarn:
+        ci_image: "node:${version}"
+        cache: yarn
+        install: "yarn install --frozen-lockfile"
+        lint: "yarn run lint"
+        test: "yarn test --coverage"
+        build: "yarn build"
+        coverage_path: "coverage"
+        dep_files: ["package.json", "yarn.lock"]
+
+  typescript:
+    codeql_build_mode: none
+    default_start: "npm start"
+    display: TypeScript
+    codeql_language: javascript-typescript
+    default_port: 3000
+    health_path: /health
+    default_version: "20"
+    default_variant: npm
+    setup_action: setup_node
+    variants:
+      npm:
+        ci_image: "node:${version}"
+        cache: npm
+        install: "npm ci"
+        lint: "npm run lint --if-present && npx --no-install tsc --noEmit"
+        test: "npm test --if-present -- --coverage"
+        build: "npm run build"
+        coverage_path: "coverage"
+        dep_files: ["package.json", "package-lock.json", "tsconfig.json"]
+      yarn:
+        ci_image: "node:${version}"
+        cache: yarn
+        install: "yarn install --frozen-lockfile"
+        lint: "yarn run lint && yarn tsc --noEmit"
+        test: "yarn test --coverage"
+        build: "yarn build"
+        coverage_path: "coverage"
+        dep_files: ["package.json", "yarn.lock", "tsconfig.json"]
+
+  python:
+    codeql_build_mode: none
+    default_start: "python main.py"
+    display: Python
+    codeql_language: python
+    default_port: 8000
+    health_path: /health
+    default_version: "3.12"
+    default_variant: pip
+    setup_action: setup_python
+    variants:
+      pip:
+        ci_image: "python:${version}"
+        cache: pip
+        install: "python -m pip install --upgrade pip && python -m pip install -r requirements.txt ruff pytest pytest-cov"
+        lint: "python -m ruff check ."
+        test: "python -m pytest --cov=. --cov-report=xml --cov-report=term --junitxml=junit.xml"
+        test_reports: "junit.xml"
+        build: "python -m compileall -q ."
+        coverage_path: "coverage.xml"
+        dep_files: ["requirements.txt"]
+      poetry:
+        ci_image: "python:${version}"
+        cache: poetry
+        install: "python -m pip install poetry && python -m poetry install --no-interaction"
+        lint: "python -m poetry run ruff check ."
+        test: "python -m poetry run pytest --cov=. --cov-report=xml --cov-report=term --junitxml=junit.xml"
+        test_reports: "junit.xml"
+        build: "python -m poetry build"
+        coverage_path: "coverage.xml"
+        dep_files: ["pyproject.toml", "poetry.lock"]
+
+  dotnet:
+    codeql_build_mode: none
+    default_start: "dotnet app.dll"
+    display: .NET
+    codeql_language: csharp
+    default_port: 8080
+    health_path: /healthz
+    default_version: "8.0.x"
+    default_variant: dotnet
+    setup_action: setup_dotnet
+    variants:
+      dotnet:
+        ci_image: "mcr.microsoft.com/dotnet/sdk:${version.replace('.x', '')}"
+        cache: nuget
+        install: "dotnet restore"
+        lint: "dotnet format --verify-no-changes --no-restore"
+        test: "dotnet test --no-restore --collect:'XPlat Code Coverage' --results-directory ./TestResults"
+        build: "dotnet build --no-restore -c Release"
+        coverage_path: "TestResults"
+        dep_files: ["*.csproj", "*.sln", "Directory.Packages.props"]
+
+  go:
+    codeql_build_mode: autobuild
+    default_start: "/app/app"
+    display: Go
+    codeql_language: go
+    default_port: 8080
+    health_path: /healthz
+    default_version: "1.22"
+    default_variant: go
+    setup_action: setup_go
+    variants:
+      go:
+        ci_image: "golang:${version}"
+        cache: go
+        install: "go mod download"
+        lint: "go vet ./..."
+        test: "go test -race -coverprofile=coverage.out ./..."
+        build: "go build ./..."
+        coverage_path: "coverage.out"
+        dep_files: ["go.mod", "go.sum"]
+
+# Tool images used by library steps. Pinned; bump deliberately.
+tools:
+  trivy: aquasec/trivy:0.58.1
+  hadolint: hadolint/hadolint:v2.12.0-alpine
+  gitleaks: zricethezav/gitleaks:v8.21.2
+  # kubectl + helm + aws cli
+  k8s: alpine/k8s:1.30.6
+  azure_cli: mcr.microsoft.com/azure-cli:2.67.0
+  aws_cli: amazon/aws-cli:2.22.0
+
+# Registry definitions. `auth` selects the library's registryLogin implementation.
+# `credentials` are Jenkins credential IDs (key = platformConfig key), `vars` are non-secret
+# values read from the Jenkins environment (Manage Jenkins -> System -> Global properties, or JCasC).
+registries:
+  acr:
+    display: Azure Container Registry
+    auth: service_principal
+    host_example: myregistry.azurecr.io
+    needs_pull_secret: false
+    vars:
+      REGISTRY_HOST: "ACR login server, e.g. myregistry.azurecr.io"
+      REGISTRY_NAMESPACE: "Repository prefix, e.g. apps (optional)"
+    credentials:
+      registry:
+        id: acr-service-principal
+        kind: Username with password
+        description: "Service principal client id (username) and client secret (password) with AcrPush on the registry"
+
+  ecr:
+    display: Amazon ECR
+    auth: aws
+    host_example: 123456789012.dkr.ecr.eu-west-1.amazonaws.com
+    needs_pull_secret: false
+    vars:
+      REGISTRY_HOST: "ECR registry host, e.g. 123456789012.dkr.ecr.eu-west-1.amazonaws.com"
+      AWS_REGION: "AWS region, e.g. eu-west-1"
+      REGISTRY_NAMESPACE: "Repository prefix, e.g. apps (optional)"
+    credentials:
+      registry:
+        id: aws-ecr
+        kind: AWS Credentials (AWS Credentials plugin)
+        description: "IAM user or role credentials with ECR push rights. Prefer an agent instance profile and leave unset"
+
+  jfrog:
+    display: JFrog Artifactory
+    auth: token
+    host_example: mycompany.jfrog.io
+    needs_pull_secret: true
+    vars:
+      REGISTRY_HOST: "Artifactory host incl. docker repo, e.g. mycompany.jfrog.io"
+      REGISTRY_NAMESPACE: "Docker repository key, e.g. docker-local"
+    credentials:
+      registry:
+        id: jfrog-registry
+        kind: Username with password
+        description: "Artifactory user or service account (username) and identity token (password)"
+
+  nexus:
+    display: Sonatype Nexus
+    auth: token
+    host_example: nexus.mycompany.com:5000
+    needs_pull_secret: true
+    vars:
+      REGISTRY_HOST: "Nexus docker connector host:port"
+      REGISTRY_NAMESPACE: "Repository path prefix (optional)"
+    credentials:
+      registry:
+        id: nexus-registry
+        kind: Username with password
+        description: "Nexus user or service account (username) and password / user token"
+
+# Cluster connectivity. Credential IDs are suffixed with the environment name, e.g. kubeconfig-prod.
+clusters:
+  generic:
+    display: Any cluster via kubeconfig
+    vars: {}
+    credentials:
+      cluster:
+        id: kubeconfig
+        per_environment: true
+        kind: Secret file
+        description: "Kubeconfig for the target environment (one credential per environment)"
+  aks:
+    display: Azure Kubernetes Service
+    vars:
+      AKS_CLUSTER_NAME: "AKS cluster name (override per environment with AKS_CLUSTER_NAME_<ENV> if they differ)"
+      AKS_RESOURCE_GROUP: "Resource group of the cluster"
+      AZURE_TENANT_ID: "Entra ID tenant id"
+      AZURE_SUBSCRIPTION_ID: "Azure subscription id"
+    credentials:
+      cluster:
+        id: azure-sp
+        per_environment: true
+        kind: Username with password
+        description: "Service principal client id (username) and secret (password); tenant via AZURE_TENANT_ID"
+  eks:
+    display: Amazon EKS
+    vars:
+      EKS_CLUSTER_NAME: "EKS cluster name"
+      AWS_REGION: "AWS region"
+    credentials:
+      cluster:
+        id: aws-eks
+        per_environment: true
+        kind: AWS Credentials (AWS Credentials plugin)
+        description: "IAM credentials mapped in the cluster's RBAC with eks:DescribeCluster"
+
+environments:
+  dev:
+    approvals: false
+    replicas: 1
+  test:
+    approvals: false
+    replicas: 1
+  uat:
+    approvals: true
+    replicas: 2
+  prod:
+    approvals: true
+    replicas: 3
+
+# Plugins each feature relies on (written to jenkins/plugins.txt).
+plugins:
+  base: [workflow-aggregator, git, credentials-binding, docker-workflow, timestamper, ansicolor, pipeline-utility-steps, ws-cleanup, junit, configuration-as-code, job-dsl]
+  ecr: [aws-credentials]
+  eks: [aws-credentials]
+  slack: [slack]
+  email: [email-ext]
+
+deployment_methods:
+  kubectl:
+    display: Plain kubectl manifests
+  helm:
+    display: Helm chart

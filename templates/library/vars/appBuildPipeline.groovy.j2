@@ -1,0 +1,66 @@
+// Build pipeline for one application: docker build, Trivy image scan, push of the immutable sha-<commit> tag, then triggers the release job.
+def call(Map cfg) {
+    org.platform.pipeline.PipelineConfig.require(this, cfg, ['name', 'path', 'dockerfile'])
+    org.platform.pipeline.PipelineConfig.requireValidName(this, cfg.name)
+    Map platform = platformConfig()
+
+    pipeline {
+        agent { label platform.agentLabel }
+        options {
+            timeout(time: 45, unit: 'MINUTES')
+            timestamps()
+            ansiColor('xterm')
+            disableConcurrentBuilds()
+            buildDiscarder(logRotator(numToKeepStr: '30'))
+        }
+        stages {
+            stage('Checkout') {
+                steps {
+                    checkout scm
+                }
+            }
+            stage('Build, scan and push image') {
+                steps {
+                    script {
+                        // Pull requests (multibranch) are built and scanned but never pushed.
+                        boolean push = !env.CHANGE_ID
+                        Map result = [:]
+                        Map buildArgs = [appName: cfg.name, context: cfg.context ?: cfg.path, dockerfile: cfg.dockerfile]
+                        if (push) {
+                            registryLogin {
+                                result = dockerBuildPush(buildArgs + [push: true])
+                            }
+                        } else {
+                            result = dockerBuildPush(buildArgs + [push: false])
+                        }
+                        writeJSON file: 'image.json', json: result
+                        archiveArtifacts artifacts: 'image.json'
+                        currentBuild.description = result.image
+                        env.BUILT_IMAGE_DIGEST = result.digest
+                    }
+                }
+            }
+            stage('Trigger release') {
+                when {
+                    beforeAgent true
+                    expression { !env.CHANGE_ID && env.BUILT_IMAGE_DIGEST }
+                }
+                steps {
+                    // Digest references are immutable, so the release deploys exactly what was scanned.
+                    build job: cfg.releaseJob ?: "${cfg.name}-release", wait: false, parameters: [
+                        string(name: 'ENVIRONMENT', value: '<< envs[0] >>'),
+                        string(name: 'IMAGE_REFERENCE', value: "@${env.BUILT_IMAGE_DIGEST}"),
+                    ]
+                }
+            }
+        }
+        post {
+            always {
+                notifyBuild()
+            }
+            cleanup {
+                cleanWs(deleteDirs: true)
+            }
+        }
+    }
+}

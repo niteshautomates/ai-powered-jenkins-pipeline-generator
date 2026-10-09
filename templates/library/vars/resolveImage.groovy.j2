@@ -1,0 +1,21 @@
+// Combines registry settings, app name and a tag or digest reference into image coordinates.
+Map call(Map args) {
+    org.platform.pipeline.PipelineConfig.require(this, args, ['appName', 'reference'])
+    String reference = args.reference
+    String tag = ''
+    String digest = ''
+    if (reference.startsWith('@')) {
+        digest = reference.substring(1)
+    } else if (reference.startsWith(':')) {
+        tag = reference.substring(1)
+    } else {
+        error("Image reference must start with ':' (tag) or '@' (digest), got '${reference}'")
+    }
+    List<String> parts = [requireEnv('REGISTRY_HOST')]
+    if (env.REGISTRY_NAMESPACE) {
+        parts.add(env.REGISTRY_NAMESPACE)
+    }
+    parts.add(args.appName)
+    String repository = parts.join('/')
+    return [repository: repository, tag: tag, digest: digest, full: "${repository}${reference}".toString()]
+}

@@ -1,0 +1,30 @@
+// CI for << t.display >> (<< variant >>): install, lint, test and build inside a pinned container image (version from the Jenkinsfile).
+void call(Map args = [:]) {
+    String version = args.version ?: '<< version >>'
+    String appDir = args.path ?: '.'
+    docker.image("<< v.ci_image >>").inside("-e HOME=${env.WORKSPACE}/.ci-home<% if app.tech == 'dotnet' %> -e DOTNET_CLI_HOME=${env.WORKSPACE}/.ci-home -e DOTNET_CLI_TELEMETRY_OPTOUT=1<% endif %>") {
+        dir(appDir) {
+<% if v.install %>
+            stage('Install') {
+                sh '<< v.install | gq >>'
+            }
+<% endif %>
+            stage('Lint') {
+                sh '<< v.lint | gq >>'
+            }
+            stage('Test') {
+                try {
+                    sh '<< v.test | gq >>'
+                } finally {
+<% if v.get('test_reports') %>
+                    junit testResults: '<< v.test_reports >>', allowEmptyResults: true
+<% endif %>
+                    archiveArtifacts artifacts: '<< v.coverage_path >>, << v.coverage_path >>/**', allowEmptyArchive: true
+                }
+            }
+            stage('Build') {
+                sh '<< v.build | gq >>'
+            }
+        }
+    }
+}

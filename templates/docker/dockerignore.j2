@@ -1,0 +1,25 @@
+.git
+.github
+jenkins
+.gitignore
+.env*
+*.md
+Dockerfile
+.dockerignore
+<% if app.tech in ("node", "typescript") %>
+node_modules
+coverage
+<% elif app.tech == "java" %>
+target
+build
+.gradle
+<% elif app.tech == "python" %>
+__pycache__
+*.pyc
+.venv
+.pytest_cache
+<% elif app.tech == "dotnet" %>
+bin
+obj
+TestResults
+<% endif %>

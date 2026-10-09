@@ -1,0 +1,31 @@
+// Builds the image, scans it with Trivy, and (unless push: false) pushes the immutable sha-<commit> tag.
+Map call(Map args) {
+    org.platform.pipeline.PipelineConfig.require(this, args, ['appName', 'context', 'dockerfile'])
+    boolean push = args.containsKey('push') ? args.push : true
+    String sha = env.GIT_COMMIT ?: sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
+    Map image = resolveImage(appName: args.appName, reference: ":sha-${sha}")
+    String digest = ''
+    withEnv([
+        "IMAGE=${image.full}",
+        "BUILD_CONTEXT=${args.context}",
+        "DOCKERFILE=${args.dockerfile}",
+        "GIT_SHA=${sha}",
+    ]) {
+        sh '''
+            docker build --pull \
+              --label "org.opencontainers.image.revision=$GIT_SHA" \
+              --label "org.opencontainers.image.source=${GIT_URL:-unknown}" \
+              --tag "$IMAGE" --file "$DOCKERFILE" "$BUILD_CONTEXT"
+        '''
+        trivyScan(mode: 'image', target: image.full)
+        if (push) {
+            sh 'docker push "$IMAGE"'
+            String repoDigest = sh(
+                returnStdout: true,
+                script: 'docker image inspect --format "{{index .RepoDigests 0}}" "$IMAGE"'
+            ).trim()
+            digest = repoDigest.split('@')[1]
+        }
+    }
+    return [image: image.full, repository: image.repository, tag: "sha-${sha}".toString(), digest: digest]
+}

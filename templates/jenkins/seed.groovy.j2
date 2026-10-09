@@ -1,0 +1,60 @@
+// Job DSL seed: creates the validation, build and release jobs for every application.
+// Environment: APP_REPO_URL (required), APP_REPO_BRANCH (default main), SCM_CREDENTIALS_ID (optional).
+String repoUrl = System.getenv('APP_REPO_URL')
+if (!repoUrl) {
+    throw new IllegalStateException('APP_REPO_URL must be set on the Jenkins controller')
+}
+String branch = System.getenv('APP_REPO_BRANCH') ?: 'main'
+String scmCredentials = System.getenv('SCM_CREDENTIALS_ID') ?: ''
+
+List apps = [
+<% for a in apps %>
+    [name: '<< a.name >>', path: '<< a.path >>'],
+<% endfor %>
+]
+
+apps.each { Map app ->
+    ['validation', 'build', 'release'].each { String kind ->
+        pipelineJob("${app.name}-${kind}") {
+            description("${app.name} ${kind} (generated; edit the generator or the Jenkinsfile, not this job)")
+            definition {
+                cpsScm {
+                    lightweight(true)
+                    scriptPath("jenkins/${app.name}/Jenkinsfile.${kind}")
+                    scm {
+                        git {
+                            remote {
+                                url(repoUrl)
+                                if (scmCredentials) {
+                                    credentials(scmCredentials)
+                                }
+                            }
+                            branches("*/${branch}")
+                            if (kind != 'release') {
+                                extensions {
+                                    // Monorepo: only changes under the app (or its Jenkinsfile) trigger it.
+                                    pathRestriction {
+                                        includedRegions(app.path == '.' ? '.*' : "${app.path}/.*\njenkins/${app.name}/.*")
+                                        excludedRegions('')
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (kind == 'release') {
+                // Declared here too: a build triggered before the first run would otherwise not see the parameters.
+                parameters {
+                    choiceParam('ENVIRONMENT', [<% for e in envs %>'<< e >>', <% endfor %>'all'], 'Target environment ("all" promotes sequentially, honouring approvals)')
+                    stringParam('IMAGE_REFERENCE', '', 'Immutable image reference: "@sha256:<digest>" (preferred) or ":sha-<commit>"')
+                }
+            }
+            if (kind != 'release') {
+                triggers {
+                    scm('H/5 * * * *')
+                }
+            }
+        }
+    }
+}

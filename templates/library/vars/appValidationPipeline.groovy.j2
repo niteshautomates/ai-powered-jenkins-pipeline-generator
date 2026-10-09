@@ -1,0 +1,46 @@
+// Validation pipeline for one application: CI (lint, test, build) then security scans. Usage: appValidationPipeline(name:, path:, ci:).
+def call(Map cfg) {
+    org.platform.pipeline.PipelineConfig.require(this, cfg, ['name', 'path', 'ci'])
+    org.platform.pipeline.PipelineConfig.requireValidName(this, cfg.name)
+    Map platform = platformConfig()
+
+    pipeline {
+        agent { label platform.agentLabel }
+        options {
+            timeout(time: 45, unit: 'MINUTES')
+            timestamps()
+            ansiColor('xterm')
+            disableConcurrentBuilds(abortPrevious: true)
+            buildDiscarder(logRotator(numToKeepStr: '30'))
+        }
+        stages {
+            stage('Checkout') {
+                steps {
+                    checkout scm
+                }
+            }
+            stage('CI') {
+                steps {
+                    script {
+                        cfg.ci.call([path: cfg.path, version: cfg.version])
+                    }
+                }
+            }
+            stage('Security') {
+                steps {
+                    script {
+                        securityScan(name: cfg.name, path: cfg.path, dockerfile: cfg.dockerfile)
+                    }
+                }
+            }
+        }
+        post {
+            always {
+                notifyBuild()
+            }
+            cleanup {
+                cleanWs(deleteDirs: true, patterns: [[pattern: '.ci-home/**', type: 'INCLUDE']])
+            }
+        }
+    }
+}

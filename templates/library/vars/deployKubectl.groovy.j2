@@ -1,0 +1,29 @@
+// Renders deploy/k8s/<app>/<env> with the image, applies it, verifies the rollout and rolls back on failure. Run inside withK8sContext.
+void call(Map args) {
+    org.platform.pipeline.PipelineConfig.require(this, args, ['app', 'environment', 'namespace', 'image'])
+    withEnv([
+        "APP=${args.app}",
+        "ENVIRONMENT=${args.environment}",
+        "NAMESPACE=${args.namespace}",
+        "IMAGE=${args.image.full}",
+        "PULL_SECRET=${args.pullSecret ?: ''}",
+        "RENDER_DIR=${pwd(tmp: true)}/rendered-${args.app}-${args.environment}",
+    ]) {
+        sh '''#!/usr/bin/env bash
+            set -euo pipefail
+            rm -rf "$RENDER_DIR" && mkdir -p "$RENDER_DIR"
+            for f in "deploy/k8s/${APP}/${ENVIRONMENT}"/*.yaml; do
+              sed "s|IMAGE_PLACEHOLDER|${IMAGE}|g" "$f" > "$RENDER_DIR/$(basename "$f")"
+            done
+            kubectl apply --namespace "$NAMESPACE" -f "$RENDER_DIR"
+            if [ -n "$PULL_SECRET" ]; then
+              kubectl patch serviceaccount default --namespace "$NAMESPACE" \
+                -p "{\\"imagePullSecrets\\":[{\\"name\\":\\"${PULL_SECRET}\\"}]}"
+            fi
+            if ! kubectl rollout status "deployment/${APP}" --namespace "$NAMESPACE" --timeout=300s; then
+              kubectl rollout undo "deployment/${APP}" --namespace "$NAMESPACE" || true
+              exit 1
+            fi
+        '''
+    }
+}

@@ -1,0 +1,9 @@
+// Returns a required Jenkins environment variable, or fails the build with a pointer to the setup guide.
+String call(String name, String fallback = null) {
+    String value = env."${name}" ?: fallback
+    if (!value) {
+        error("Missing required Jenkins environment variable ${name}. " +
+              "Set it under Manage Jenkins -> System -> Global properties (see docs/JENKINS_SETUP.md).")
+    }
+    return value
+}

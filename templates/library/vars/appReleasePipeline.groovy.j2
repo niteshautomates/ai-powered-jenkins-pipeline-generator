@@ -1,0 +1,71 @@
+// Release pipeline for one application: promotes an image through << envs | join(' -> ') >>. Approval gates for: << approval_envs | join(', ') or 'none' >>.
+def call(Map cfg) {
+    org.platform.pipeline.PipelineConfig.require(this, cfg, ['name'])
+    org.platform.pipeline.PipelineConfig.requireValidName(this, cfg.name)
+    Map platform = platformConfig()
+
+    pipeline {
+        // No pipeline-level agent: approval prompts must not hold an executor.
+        agent none
+        parameters {
+            choice(name: 'ENVIRONMENT', choices: [<% for e in envs %>'<< e >>', <% endfor %>'all'],
+                   description: 'Target environment ("all" promotes sequentially, honouring approvals)')
+            string(name: 'IMAGE_REFERENCE', defaultValue: '',
+                   description: 'Immutable image reference: "@sha256:<digest>" (preferred) or ":sha-<commit>"')
+        }
+        options {
+            timestamps()
+            ansiColor('xterm')
+            disableConcurrentBuilds()
+            buildDiscarder(logRotator(numToKeepStr: '50'))
+        }
+        stages {
+            stage('Resolve image') {
+                steps {
+                    script {
+                        if (!params.IMAGE_REFERENCE) {
+                            error('Provide IMAGE_REFERENCE as "@sha256:<digest>" or ":sha-<commit>"')
+                        }
+                        if (!(params.IMAGE_REFERENCE.startsWith('@') || params.IMAGE_REFERENCE.startsWith(':'))) {
+                            error("IMAGE_REFERENCE must start with '@' (digest) or ':' (tag), got '${params.IMAGE_REFERENCE}'")
+                        }
+                        currentBuild.description = "${cfg.name} ${params.IMAGE_REFERENCE}"
+                    }
+                }
+            }
+<% for e in envs %>
+            stage('Deploy << e >>') {
+                when {
+                    beforeAgent true
+<% if env_cfg[e].approvals %>
+                    beforeInput true
+<% endif %>
+                    expression { params.ENVIRONMENT == '<< e >>' || params.ENVIRONMENT == 'all' }
+                }
+<% if env_cfg[e].approvals %>
+                options {
+                    timeout(time: 1, unit: 'DAYS')
+                }
+                input {
+                    message "Deploy ${cfg.name} to << e >>?"
+                    ok 'Deploy'
+                    submitter platform.approverGroup
+                }
+<% endif %>
+                agent { label platform.agentLabel }
+                steps {
+                    checkout scm
+                    script {
+                        deployEnvironment(app: cfg.name, environment: '<< e >>', imageReference: params.IMAGE_REFERENCE)
+                    }
+                }
+            }
+<% endfor %>
+        }
+        post {
+            always {
+                notifyBuild(notifyOnSuccess: true)
+            }
+        }
+    }
+}

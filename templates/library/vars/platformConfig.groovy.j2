@@ -1,0 +1,28 @@
+// Central, non-secret platform conventions shared by every pipeline. Credential values never appear in code.
+Map call() {
+    return [
+        registry     : '<< registry >>',
+        cluster      : '<< cluster >>',
+        deployMethod : '<< method >>',
+        agentLabel   : '<< agent_label >>',
+        notifications: '<< notifications >>',
+        approverGroup: '<< approver_group >>',
+        // Jenkins credential IDs (create them under Manage Jenkins -> Credentials)
+        credentials  : [
+<% for key, c in creds.items() %>
+            << key >>: '<< c.id >>',
+<% endfor %>
+        ],
+        // Pinned tool images; bump deliberately
+        images       : [
+<% for key, image in images.items() %>
+            << key >>: '<< image >>',
+<% endfor %>
+        ],
+        environments : [
+<% for e in envs %>
+            << e >>: [replicas: << env_cfg[e].replicas >>, approval: << 'true' if env_cfg[e].approvals else 'false' >>],
+<% endfor %>
+        ],
+    ]
+}

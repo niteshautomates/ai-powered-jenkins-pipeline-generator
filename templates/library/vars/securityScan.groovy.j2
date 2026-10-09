@@ -1,0 +1,24 @@
+// Secret scan (gitleaks), Dockerfile lint (hadolint) and filesystem vulnerability scan (Trivy), run in parallel.
+void call(Map args) {
+    org.platform.pipeline.PipelineConfig.require(this, args, ['name', 'path'])
+    Map images = platformConfig().images
+    String dockerfile = args.dockerfile ?: "${args.path}/Dockerfile"
+    Map branches = [
+        'Secret scan (gitleaks)': {
+            withEnv(["GITLEAKS_IMAGE=${images.gitleaks}"]) {
+                sh 'docker run --rm -v "$WORKSPACE:/repo" "$GITLEAKS_IMAGE" detect --source /repo --redact --no-banner'
+            }
+        },
+        'Filesystem vulnerabilities (Trivy)': {
+            trivyScan(mode: 'fs', target: args.path)
+        },
+    ]
+    if (fileExists(dockerfile)) {
+        branches['Dockerfile lint (hadolint)'] = {
+            withEnv(["HADOLINT_IMAGE=${images.hadolint}", "DOCKERFILE=${dockerfile}"]) {
+                sh 'docker run --rm -i "$HADOLINT_IMAGE" hadolint --failure-threshold error - < "$DOCKERFILE"'
+            }
+        }
+    }
+    parallel(branches)
+}

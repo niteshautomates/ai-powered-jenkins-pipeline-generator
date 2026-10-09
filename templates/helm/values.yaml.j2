@@ -1,0 +1,52 @@
+replicaCount: 1
+
+component: service
+partOf: << app.name >>
+environmentName: ""
+
+image:
+  repository: ""   # set by the release workflow
+  tag: ""          # set by the release workflow
+  digest: ""       # set by the release workflow (takes precedence over tag)
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: << port >>
+
+env: {}
+
+probes:
+  path: << t.health_path >>
+  initialDelaySeconds: 10
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop: [ALL]
